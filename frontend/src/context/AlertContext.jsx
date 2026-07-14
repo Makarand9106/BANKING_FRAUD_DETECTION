@@ -97,7 +97,7 @@ export const AlertProvider = ({ children }) => {
           showToast(
             'danger', 
             'Transaction Blocked', 
-            `Engine blocked suspicious transaction of $${data.transaction.amount} to merchant ${data.transaction.merchantName || 'unknown'}.`
+            `Engine blocked suspicious transaction of ₹${data.transaction.amount} to merchant ${data.transaction.merchantName || 'unknown'}.`
           );
         }
       });

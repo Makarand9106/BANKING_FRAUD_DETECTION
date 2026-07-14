@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import mongoose from '../backend/node_modules/mongoose/index.js';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 // Reconstruct __dirname for ES Modules absolute path resolution
@@ -438,6 +438,11 @@ async function seed() {
   console.log('Inserting platform execution operator profiles...');
   const usersToInsert = [];
   
+  // Standard non-numbered users
+  usersToInsert.push({ email: 'admin@bank.com', passwordHash, role: 'admin', isActive: true });
+  usersToInsert.push({ email: 'manager@bank.com', passwordHash, role: 'manager', isActive: true });
+  usersToInsert.push({ email: 'analyst@bank.com', passwordHash, role: 'analyst', isActive: true });
+
   for (let i = 1; i <= 3; i++) usersToInsert.push({ email: `admin${i}@bank.com`, passwordHash, role: 'admin', isActive: true });
   for (let i = 1; i <= 4; i++) usersToInsert.push({ email: `manager${i}@bank.com`, passwordHash, role: 'manager', isActive: true });
   for (let i = 1; i <= 3; i++) usersToInsert.push({ email: `analyst${i}@bank.com`, passwordHash, role: 'analyst', isActive: true });

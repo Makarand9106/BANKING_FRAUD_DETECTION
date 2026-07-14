@@ -117,7 +117,7 @@ export const TransactionTable = ({ transactions, isLoading, onRowClick }) => {
               ))
             ) : transactions.length > 0 ? (
               transactions.map((tx) => {
-                const txIdShort = tx._id.substring(tx._id.length - 8).toUpperCase();
+                const txIdDisplay = tx.transactionId || `#${tx._id.substring(tx._id.length - 8).toUpperCase()}`;
                 const fromAcc = tx.fromAccount || tx.fromAccountId || {};
                 const toAcc = tx.toAccount || tx.toAccountId || {};
                 const fromNo = fromAcc.accountNumber || 'EXTERNAL';
@@ -131,7 +131,7 @@ export const TransactionTable = ({ transactions, isLoading, onRowClick }) => {
                     className="hover:bg-bg/25 cursor-pointer transition-colors"
                   >
                     <td className="py-2.5 px-3 font-mono font-bold text-text-primary whitespace-nowrap">
-                      #{txIdShort}
+                      {txIdDisplay}
                     </td>
                     <td className="py-2.5 px-3 font-mono text-muted">{fromNo}</td>
                     <td className="py-2.5 px-3 font-mono text-muted">{toNo}</td>
@@ -199,7 +199,7 @@ export const TransactionTable = ({ transactions, isLoading, onRowClick }) => {
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Transaction Auditing</span>
                 <h3 className="text-sm font-bold text-text-primary uppercase font-mono">
-                  #{selectedTx._id.toUpperCase()}
+                  {selectedTx.transactionId || `#${selectedTx._id.toUpperCase()}`}
                 </h3>
               </div>
               <button

@@ -128,7 +128,7 @@ export const Simulator = () => {
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5">Transfer Amount ($)</label>
+              <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5">Transfer Amount (₹)</label>
               <input
                 type="number"
                 step="0.01"

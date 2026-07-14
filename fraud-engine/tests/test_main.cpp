@@ -210,77 +210,95 @@ bool testTopKRanker() {
 
 // Test 8 — Full Pipeline: Ingests normal, cycle, velocity, smurfing, and drain data to assert final process scores.
 bool testFullPipeline() {
-    // std::vector tracks accumulated engine metrics and results; std::string matches pipeline identity fields.
-    FraudEngine engine;
-    
-    // Normal Transaction
-    engine.getGraph().getAccount("ACC-A") = AccountNode{"ACC-A", 100000.0, 1718000000000LL, 0.0};
-    engine.getGraph().getAccount("ACC-B") = AccountNode{"ACC-B", 100000.0, 1718000000000LL, 0.0};
-    
-    Transaction txNormal{"ACC-A", "ACC-B", 1000.0, 1718000000000LL};
-    AnalysisResult resNormal = engine.process(txNormal, "TX-NORMAL");
-    if (resNormal.totalScore != 0.0 || resNormal.severity != "NONE" || resNormal.decision != "APPROVE") {
-        return false;
-    }
-    
-    // Cycle Transaction (ACC-A -> ACC-B -> ACC-C -> ACC-A)
-    engine.getGraph().getAccount("ACC-C") = AccountNode{"ACC-C", 100000.0, 1718000000000LL, 0.0};
-    Transaction txCycle1{"ACC-B", "ACC-C", 1000.0, 1718000001000LL};
-    engine.process(txCycle1, "TX-CYCLE-1");
-    
-    Transaction txCycle2{"ACC-C", "ACC-A", 1000.0, 1718000002000LL};
-    AnalysisResult resCycle = engine.process(txCycle2, "TX-CYCLE-2");
-    
-    bool hasCycleSig = false;
-    for (const auto& sig : resCycle.signals) {
-        if (sig.type == "CYCLE" && sig.score == 40.0) {
-            hasCycleSig = true;
+    // 1. Normal Transaction
+    {
+        FraudEngine engine;
+        engine.getGraph().getAccount("ACC-A") = AccountNode{"ACC-A", 100000.0, 1718000000000LL, 0.0};
+        engine.getGraph().getAccount("ACC-B") = AccountNode{"ACC-B", 100000.0, 1718000000000LL, 0.0};
+        
+        Transaction txNormal{"ACC-A", "ACC-B", 1000.0, 1718000000000LL};
+        AnalysisResult resNormal = engine.process(txNormal, "TX-NORMAL");
+        if (resNormal.totalScore != 0.0 || resNormal.severity != "NONE" || resNormal.decision != "APPROVE") {
+            return false;
         }
     }
-    if (!hasCycleSig) return false;
     
-    // Velocity Transaction
-    engine.getGraph().getAccount("ACC-V") = AccountNode{"ACC-V", 100000.0, 1718000000000LL, 0.0};
-    engine.getGraph().getAccount("ACC-W") = AccountNode{"ACC-W", 100000.0, 1718000000000LL, 0.0};
-    AnalysisResult resVelocity;
-    for (int i = 0; i < 11; ++i) {
-        Transaction tx{"ACC-V", "ACC-W", 100.0, 1718000000000LL + i * 10000LL};
-        resVelocity = engine.process(tx, "TX-VEL-" + std::to_string(i));
-    }
-    bool hasVelocitySig = false;
-    for (const auto& sig : resVelocity.signals) {
-        if (sig.type == "VELOCITY" && sig.score == 20.0) {
-            hasVelocitySig = true;
+    // 2. Cycle Transaction (ACC-A -> ACC-B -> ACC-C -> ACC-A)
+    {
+        FraudEngine engine;
+        engine.getGraph().getAccount("ACC-A") = AccountNode{"ACC-A", 100000.0, 1718000000000LL, 0.0};
+        engine.getGraph().getAccount("ACC-B") = AccountNode{"ACC-B", 100000.0, 1718000000000LL, 0.0};
+        engine.getGraph().getAccount("ACC-C") = AccountNode{"ACC-C", 100000.0, 1718000000000LL, 0.0};
+        
+        Transaction txCycleNormal{"ACC-A", "ACC-B", 1000.0, 1718000000000LL};
+        engine.process(txCycleNormal, "TX-CYCLE-NORMAL");
+        
+        Transaction txCycle1{"ACC-B", "ACC-C", 1000.0, 1718000010000LL};
+        engine.process(txCycle1, "TX-CYCLE-1");
+        
+        Transaction txCycle2{"ACC-C", "ACC-A", 1000.0, 1718000020000LL};
+        AnalysisResult resCycle = engine.process(txCycle2, "TX-CYCLE-2");
+        
+        bool hasCycleSig = false;
+        for (const auto& sig : resCycle.signals) {
+            if (sig.type == "CYCLE" && sig.score == 40.0) {
+                hasCycleSig = true;
+            }
         }
+        if (!hasCycleSig) return false;
     }
-    if (!hasVelocitySig) return false;
     
-    // Balance Drain Transaction
-    engine.getGraph().getAccount("ACC-D") = AccountNode{"ACC-D", 200000.0, 1718000000000LL, 0.0};
-    Transaction txDrain{"ACC-D", "ACC-E", 150000.0, 1718000005000LL};
-    AnalysisResult resDrain = engine.process(txDrain, "TX-DRAIN");
-    bool hasDrainSig = false;
-    for (const auto& sig : resDrain.signals) {
-        if (sig.type == "DRAIN" && sig.score == 30.0) {
-            hasDrainSig = true;
+    // 3. Velocity Transaction
+    {
+        FraudEngine engine;
+        engine.getGraph().getAccount("ACC-V") = AccountNode{"ACC-V", 100000.0, 1718000000000LL, 0.0};
+        engine.getGraph().getAccount("ACC-W") = AccountNode{"ACC-W", 100000.0, 1718000000000LL, 0.0};
+        AnalysisResult resVelocity;
+        for (int i = 0; i < 11; ++i) {
+            Transaction tx{"ACC-V", "ACC-W", 100.0, 1718000000000LL + i * 10000LL};
+            resVelocity = engine.process(tx, "TX-VEL-" + std::to_string(i));
         }
+        bool hasVelocitySig = false;
+        for (const auto& sig : resVelocity.signals) {
+            if (sig.type == "VELOCITY" && sig.score == 20.0) {
+                hasVelocitySig = true;
+            }
+        }
+        if (!hasVelocitySig) return false;
     }
-    if (!hasDrainSig) return false;
     
-    // Smurfing Transaction
-    engine.getGraph().getAccount("ACC-S") = AccountNode{"ACC-S", 100000.0, 1718000000000LL, 0.0};
-    AnalysisResult resSmurfing;
-    for (int i = 1; i <= 7; ++i) {
-        Transaction tx{"ACC-S", "ACC-R" + std::to_string(i), 9500.0, 1718000000000LL + i * 10000LL};
-        resSmurfing = engine.process(tx, "TX-SMURF-" + std::to_string(i));
-    }
-    bool hasSmurfingSig = false;
-    for (const auto& sig : resSmurfing.signals) {
-        if (sig.type == "SMURFING" && sig.score == 25.0) {
-            hasSmurfingSig = true;
+    // 4. Balance Drain Transaction
+    {
+        FraudEngine engine;
+        engine.getGraph().getAccount("ACC-D") = AccountNode{"ACC-D", 200000.0, 1718000000000LL, 0.0};
+        Transaction txDrain{"ACC-D", "ACC-E", 150000.0, 1718000005000LL};
+        AnalysisResult resDrain = engine.process(txDrain, "TX-DRAIN");
+        bool hasDrainSig = false;
+        for (const auto& sig : resDrain.signals) {
+            if (sig.type == "DRAIN" && sig.score == 30.0) {
+                hasDrainSig = true;
+            }
         }
+        if (!hasDrainSig) return false;
     }
-    if (!hasSmurfingSig) return false;
+    
+    // 5. Smurfing Transaction
+    {
+        FraudEngine engine;
+        engine.getGraph().getAccount("ACC-S") = AccountNode{"ACC-S", 100000.0, 1718000000000LL, 0.0};
+        AnalysisResult resSmurfing;
+        for (int i = 1; i <= 7; ++i) {
+            Transaction tx{"ACC-S", "ACC-R" + std::to_string(i), 9500.0, 1718000000000LL + i * 10000LL};
+            resSmurfing = engine.process(tx, "TX-SMURF-" + std::to_string(i));
+        }
+        bool hasSmurfingSig = false;
+        for (const auto& sig : resSmurfing.signals) {
+            if (sig.type == "SMURFING" && sig.score == 25.0) {
+                hasSmurfingSig = true;
+            }
+        }
+        if (!hasSmurfingSig) return false;
+    }
     
     return true;
 }

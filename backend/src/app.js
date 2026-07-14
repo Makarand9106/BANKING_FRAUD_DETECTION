@@ -35,7 +35,7 @@ app.use(morgan('dev'));
 // Security Rate Limiter: Max 100 requests per 15 minutes for Auth API
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 10000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -52,8 +52,8 @@ app.use('/api/transactions', transactionRouter);
 app.use('/api/accounts', accountRouter);
 app.use('/api/alerts', alertRouter);
 app.use('/api/graph', graphRouter);
-
 // Centralized error boundary mounted last
 app.use(errorHandler);
+
 
 export default app;

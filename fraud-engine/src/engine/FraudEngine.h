@@ -22,7 +22,7 @@ private:
 public:
     FraudEngine();
 
-    AnalysisResult process(const Transaction& tx, const std::string& transactionId);
+    AnalysisResult process(const Transaction& tx, const std::string& transactionId, bool runParallel = false);
     
     // Getter to expose graph reference to main
     TransactionGraph& getGraph();

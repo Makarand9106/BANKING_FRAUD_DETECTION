@@ -10,12 +10,12 @@ const router = express.Router();
 const createTransactionSchema = [
   body('fromAccountId')
     .optional({ nullable: true })
-    .isMongoId()
-    .withMessage('Source Account ID must be a valid Mongo ObjectId'),
+    .isString()
+    .withMessage('Source Account ID must be a valid Mongo ObjectId or Account Number'),
   body('toAccountId')
     .optional({ nullable: true })
-    .isMongoId()
-    .withMessage('Destination Account ID must be a valid Mongo ObjectId'),
+    .isString()
+    .withMessage('Destination Account ID must be a valid Mongo ObjectId or Account Number'),
   body('amount')
     .isFloat({ gt: 0 })
     .withMessage('Transfer amount must be a numeric value greater than zero'),
@@ -43,6 +43,14 @@ const createTransactionSchema = [
     .optional()
     .isISO8601()
     .withMessage('Last active date must be a valid ISO 8601 Date string'),
+  body('bypassEngine')
+    .optional()
+    .isBoolean()
+    .withMessage('Bypass Engine parameter must be a boolean value'),
+  body('runParallel')
+    .optional()
+    .isBoolean()
+    .withMessage('Run Parallel parameter must be a boolean value'),
 ];
 
 const updateStatusSchema = [

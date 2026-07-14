@@ -9,6 +9,12 @@ import alertService from '../services/alert.service.js';
 import { emitTransactionCreated, emitNewFraudAlert, emitRiskScoreUpdated } from '../socket/socket.handler.js';
 import logger from '../config/logger.js';
 
+const findAccount = async (id, session) => {
+  if (!id) return null;
+  const query = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { accountNumber: id };
+  return session ? Account.findOne(query).session(session) : Account.findOne(query);
+};
+
 class TransactionController {
   // POST /api/transactions
   async createTransaction(req, res, next) {
@@ -22,7 +28,7 @@ class TransactionController {
       let toAcc = null;
 
       if (fromAccountId) {
-        fromAcc = await Account.findById(fromAccountId).session(session);
+        fromAcc = await findAccount(fromAccountId, session);
         if (!fromAcc) {
           await session.abortTransaction();
           return res.status(404).json({ success: false, message: 'Source account not found' });
@@ -48,7 +54,7 @@ class TransactionController {
       }
 
       if (toAccountId) {
-        toAcc = await Account.findById(toAccountId).session(session);
+        toAcc = await findAccount(toAccountId, session);
         if (!toAcc) {
           await session.abortTransaction();
           return res.status(404).json({ success: false, message: 'Destination account not found' });
@@ -61,8 +67,8 @@ class TransactionController {
 
       // Create transaction document (status: pending)
       const transaction = new Transaction({
-        fromAccountId: fromAccountId || null,
-        toAccountId: toAccountId || null,
+        fromAccountId: fromAcc ? fromAcc._id : null,
+        toAccountId: toAcc ? toAcc._id : null,
         amount,
         timestamp: timestamp || new Date(),
         deviceId: deviceId || null,
@@ -74,19 +80,34 @@ class TransactionController {
 
       await transaction.save({ session });
 
-      // 2. Map payload and invoke C++ engine analyzer
-      const transactionDataForEngine = {
-        transactionId: transaction._id.toString(),
-        from: fromAccountId ? fromAccountId.toString() : '',
-        to: toAccountId ? toAccountId.toString() : '',
-        amount: transaction.amount,
-        timestamp: transaction.timestamp ? new Date(transaction.timestamp).getTime() : Date.now(),
-        balance: fromAcc ? fromAcc.balance : 0,
-        lastActiveAt: fromAcc && fromAcc.lastActiveAt ? new Date(fromAcc.lastActiveAt).getTime() : 0,
-      };
+      // Check if we want to bypass the engine (add separately)
+      const bypassEngine = req.body.bypassEngine === true || req.body.bypassEngine === 'true';
 
-      const analysis = await fraudEngineService.analyze(transactionDataForEngine);
-      const { totalScore, severity, signals, decision } = analysis;
+      let totalScore = 0;
+      let severity = 'NONE';
+      let signals = [];
+      let decision = 'APPROVE';
+      let analysis = null;
+
+      if (!bypassEngine) {
+        // 2. Map payload and invoke C++ engine analyzer
+        const transactionDataForEngine = {
+          transactionId: transaction._id.toString(),
+          from: fromAcc ? fromAcc.accountNumber : '',
+          to: toAcc ? toAcc.accountNumber : '',
+          amount: transaction.amount,
+          timestamp: transaction.timestamp ? new Date(transaction.timestamp).getTime() : Date.now(),
+          balance: fromAcc ? fromAcc.balance : 0,
+          lastActiveAt: fromAcc && fromAcc.lastActiveAt ? new Date(fromAcc.lastActiveAt).getTime() : 0,
+          runParallel: req.body.runParallel === true || req.body.runParallel === 'true',
+        };
+
+        analysis = await fraudEngineService.analyze(transactionDataForEngine);
+        totalScore = analysis.totalScore;
+        severity = analysis.severity;
+        signals = analysis.signals;
+        decision = analysis.decision;
+      }
 
       // 3. Create FraudScore document
       const fraudScore = new FraudScore({
@@ -172,7 +193,7 @@ class TransactionController {
 
         // Notify score updates
         const updatedScore = alertData?.account ? alertData.account.riskScore : (fromAcc ? fromAcc.riskScore : 0);
-        emitRiskScoreUpdated(fromAccountId || toAccountId, updatedScore, analysis.topK);
+        emitRiskScoreUpdated(fromAccountId || toAccountId, updatedScore, analysis ? analysis.topK : []);
       } catch (err) {
         logger.warn('Failed to emit transaction web sockets event: %s', err.message);
       }
@@ -221,12 +242,22 @@ class TransactionController {
 
       if (status) matchStage.status = status;
 
-      // Handle ID mappings if they are valid ObjectIds
+      // Handle ID mappings if they are valid ObjectIds or account numbers
       if (fromAccountId) {
-        matchStage.fromAccountId = new mongoose.Types.ObjectId(fromAccountId);
+        if (mongoose.Types.ObjectId.isValid(fromAccountId)) {
+          matchStage.fromAccountId = new mongoose.Types.ObjectId(fromAccountId);
+        } else {
+          const acc = await Account.findOne({ accountNumber: fromAccountId });
+          matchStage.fromAccountId = acc ? acc._id : null;
+        }
       }
       if (toAccountId) {
-        matchStage.toAccountId = new mongoose.Types.ObjectId(toAccountId);
+        if (mongoose.Types.ObjectId.isValid(toAccountId)) {
+          matchStage.toAccountId = new mongoose.Types.ObjectId(toAccountId);
+        } else {
+          const acc = await Account.findOne({ accountNumber: toAccountId });
+          matchStage.toAccountId = acc ? acc._id : null;
+        }
       }
 
       // Range amount filters
@@ -243,10 +274,15 @@ class TransactionController {
         if (endDate) matchStage.timestamp.$lte = new Date(endDate);
       }
 
-      // Text search: matches merchantName
+      // Text search: matches merchantName, account numbers, or transactionId
       if (search) {
+        const matchingAccounts = await Account.find({ accountNumber: { $regex: search, $options: 'i' } });
+        const matchingAccountIds = matchingAccounts.map(a => a._id);
         matchStage.$or = [
+          { transactionId: { $regex: search, $options: 'i' } },
           { merchantName: { $regex: search, $options: 'i' } },
+          { fromAccountId: { $in: matchingAccountIds } },
+          { toAccountId: { $in: matchingAccountIds } },
         ];
       }
 
@@ -352,8 +388,12 @@ class TransactionController {
   // GET /api/transactions/:id
   async getTransaction(req, res, next) {
     try {
+      const query = mongoose.Types.ObjectId.isValid(req.params.id)
+        ? { _id: req.params.id }
+        : { transactionId: req.params.id };
+
       const transaction = await Transaction.findOne({
-        _id: req.params.id,
+        ...query,
         isDeleted: false,
       })
         .populate('fraudScoreId')

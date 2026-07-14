@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Account from '../models/Account.js';
 import Transaction from '../models/Transaction.js';
 import Alert from '../models/Alert.js';
@@ -8,8 +9,13 @@ class AccountController {
   async getAccount(req, res, next) {
     try {
       const accountId = req.params.id;
+      let account;
+      if (mongoose.Types.ObjectId.isValid(accountId)) {
+        account = await Account.findById(accountId).populate('ownerUserId', 'email role isActive');
+      } else {
+        account = await Account.findOne({ accountNumber: accountId }).populate('ownerUserId', 'email role isActive');
+      }
 
-      const account = await Account.findById(accountId).populate('ownerUserId', 'email role isActive');
       if (!account) {
         return res.status(404).json({
           success: false,
@@ -20,8 +26,8 @@ class AccountController {
       // Aggregate last 30 transactions for this account (inbound or outbound)
       const transactions = await Transaction.find({
         $or: [
-          { fromAccountId: accountId },
-          { toAccountId: accountId },
+          { fromAccountId: account._id },
+          { toAccountId: account._id },
         ],
         isDeleted: false,
       })
@@ -30,11 +36,11 @@ class AccountController {
         .populate('fraudScoreId');
 
       // Fetch alert history
-      const alerts = await Alert.find({ accountId })
+      const alerts = await Alert.find({ accountId: account._id })
         .sort({ createdAt: -1 });
 
       // Fetch latest FraudPatterns
-      const patterns = await FraudPattern.find({ accountId })
+      const patterns = await FraudPattern.find({ accountId: account._id })
         .sort({ timestamp: -1 })
         .limit(10);
 
@@ -94,7 +100,10 @@ class AccountController {
         });
       }
 
-      const account = await Account.findById(req.params.id);
+      const accountId = req.params.id;
+      const account = mongoose.Types.ObjectId.isValid(accountId)
+        ? await Account.findById(accountId)
+        : await Account.findOne({ accountNumber: accountId });
       if (!account) {
         return res.status(404).json({
           success: false,

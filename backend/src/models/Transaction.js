@@ -2,6 +2,13 @@ import mongoose from 'mongoose';
 
 const transactionSchema = new mongoose.Schema(
   {
+    transactionId: {
+      type: String,
+      required: true,
+      unique: true,
+      default: () => 'TX-' + Math.random().toString(36).substring(2, 11).toUpperCase().padEnd(9, 'X'),
+      index: true,
+    },
     fromAccountId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Account',

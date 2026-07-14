@@ -130,7 +130,8 @@ int main() {
                     tx.amount = payload.value("amount", 0.0);
                     tx.timestamp = parseTimestamp(payload["timestamp"]);
 
-                    AnalysisResult result = engine.process(tx, txId);
+                    bool runParallel = payload.value("runParallel", false);
+                    AnalysisResult result = engine.process(tx, txId, runParallel);
 
                     nlohmann::json outJson = engine.getAlertGen().buildOutput(result);
                     outJson["responseType"] = "ANALYZE_TRANSACTION_RESULT";

@@ -5,6 +5,7 @@
 #include "../detectors/BalanceDrainDetector.h"
 #include "../detectors/DormantActivityDetector.h"
 #include "../detectors/RiskPropagationDetector.h"
+#include <future>
 
 FraudEngine::FraudEngine() {
     // Register all 6 detectors in pipeline order
@@ -16,15 +17,28 @@ FraudEngine::FraudEngine() {
     detectors.push_back(std::make_unique<RiskPropagationDetector>());
 }
 
-AnalysisResult FraudEngine::process(const Transaction& tx, const std::string& transactionId) {
+AnalysisResult FraudEngine::process(const Transaction& tx, const std::string& transactionId, bool runParallel) {
     // 1. Add current transaction to graph structures
     graph.addTransaction(tx);
 
-    // 2. Run sequential detector evaluation pass
+    // 2. Run detector evaluation pass (sequential or parallel)
     std::vector<Signal> signals;
-    for (const auto& detector : detectors) {
-        auto sigs = detector->detect(tx, graph);
-        signals.insert(signals.end(), sigs.begin(), sigs.end());
+    if (runParallel) {
+        std::vector<std::future<std::vector<Signal>>> futures;
+        for (const auto& detector : detectors) {
+            futures.push_back(std::async(std::launch::async, [&]() {
+                return detector->detect(tx, graph);
+            }));
+        }
+        for (auto& fut : futures) {
+            auto sigs = fut.get();
+            signals.insert(signals.end(), sigs.begin(), sigs.end());
+        }
+    } else {
+        for (const auto& detector : detectors) {
+            auto sigs = detector->detect(tx, graph);
+            signals.insert(signals.end(), sigs.begin(), sigs.end());
+        }
     }
 
     // 3. Aggregate individual signal scores

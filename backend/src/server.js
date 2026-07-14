@@ -8,7 +8,7 @@ import { connectDB } from './config/db.js';
 import { initSocket } from './config/socket.js';
 import logger from './config/logger.js';
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 4000;
 
 const startServer = async () => {
   try {
@@ -23,11 +23,12 @@ const startServer = async () => {
 
     // Step 4: Listen for incoming connections
     httpServer.listen(PORT, () => {
-      logger.info('===========================================================');
-      logger.info(`Banking Fraud Detection System Backend is operational.`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      logger.info(`Port:        ${PORT}`);
-      logger.info('===========================================================');
+      // logger.info('===========================================================');
+      // logger.info(`Banking Fraud Detection System Backend is operational.`);
+      // logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      // logger.info(`Port:        ${PORT}`);
+      // logger.info('===========================================================');
+      console.log("App started successfully on Port ", PORT);
     });
   } catch (error) {
     logger.error('CRITICAL: Failed to bootstrap backend server: %s', error.stack || error.message);

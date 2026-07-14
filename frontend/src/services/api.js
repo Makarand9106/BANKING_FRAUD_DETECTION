@@ -2,11 +2,13 @@ import axios from 'axios';
 
 // Create API axios instance
 const api = axios.create({
-  baseURL: '', // Vite proxy configuration forwards /api requests to port 5000
+  // IF USING VITE PROXY: Change this to '/api' or leave it blank if your proxy handles the prefix.
+  // If not using a proxy, keep 'http://localhost:4000' but ensure your refresh call matches.
+  baseURL: 'http://localhost:4000', 
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Necessary for HttpOnly refresh-token cookie transmission
+  withCredentials: true, 
 });
 
 // In-memory token cache mirroring localStorage
@@ -25,10 +27,6 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-/**
- * Update the stored access token in memory and local storage.
- * @param {string|null} token 
- */
 export const setAccessToken = (token) => {
   _accessToken = token;
   if (token) {
@@ -38,13 +36,9 @@ export const setAccessToken = (token) => {
   }
 };
 
-/**
- * Retrieve the active access token.
- * @returns {string|null}
- */
 export const getAccessToken = () => _accessToken;
 
-// Intercept requests to inject the Bearer authorization header
+// 1. Request Interceptor (Inject Bearer Token)
 api.interceptors.request.use(
   (config) => {
     const token = getAccessToken();
@@ -56,15 +50,20 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Intercept responses to intercept 401 Unauthorized errors and trigger token refresh
+// 2. Response Interceptor (Handle 401 & Token Refresh) - ONLY ONE INSTANCE
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // If refresh endpoint fails, clear token and notify auth provider
-    if (originalRequest.url && originalRequest.url.includes('/api/auth/refresh-token')) {
+    // Prevent infinite loops if the refresh endpoint itself returns a 401
+    if (originalRequest.url && originalRequest.url.includes('/auth/refresh-token')) {
       setAccessToken(null);
+      return Promise.reject(error);
+    }
+
+    // Skip token rotation if the login request failed
+    if (originalRequest.url && originalRequest.url.includes('/auth/login')) {
       return Promise.reject(error);
     }
 
@@ -85,8 +84,8 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        // Post request to backend refresh-token endpoint
-        const response = await axios.post('/api/auth/refresh-token', {}, { withCredentials: true });
+        // Use the instance or absolute URL so it matches your backend configuration
+        const response = await axios.post('http://localhost:4000/api/auth/refresh-token', {}, { withCredentials: true });
         const { accessToken } = response.data;
         
         setAccessToken(accessToken);
@@ -100,7 +99,6 @@ api.interceptors.response.use(
         isRefreshing = false;
         setAccessToken(null);
         
-        // Dispatch custom global event to notify AuthContext to sign out the user
         window.dispatchEvent(new Event('auth-logout'));
         return Promise.reject(refreshError);
       }

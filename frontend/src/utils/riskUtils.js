@@ -4,11 +4,11 @@
  * @returns {string}
  */
 export const formatCurrency = (amount) => {
-  if (typeof amount !== 'number') return '$0.00';
-  return new Intl.NumberFormat('en-US', {
+  if (typeof amount !== 'number') return '₹0.00';
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD',
-  }).format(amount);
+    currency: 'INR',
+  }).format(amount).replace(/\s/g, '');
 };
 
 /**

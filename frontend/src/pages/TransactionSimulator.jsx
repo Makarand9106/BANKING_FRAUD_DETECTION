@@ -22,6 +22,10 @@ export const TransactionSimulator = () => {
   const [accounts, setAccounts] = useState([]);
   const [activePreset, setActivePreset] = useState(null);
   const [progressMsg, setProgressMsg] = useState('');
+  const [recentTransactions, setRecentTransactions] = useState([]);
+  const [txIdToLoad, setTxIdToLoad] = useState('');
+  const [bypassEngine, setBypassEngine] = useState(false);
+  const [runParallel, setRunParallel] = useState(false);
   
   // Form State
   const [formData, setFormData] = useState({
@@ -80,6 +84,45 @@ export const TransactionSimulator = () => {
     }
   };
 
+  const fetchRecentTransactions = async () => {
+    try {
+      const res = await api.get('/api/transactions?limit=15');
+      setRecentTransactions(res.data.data || []);
+    } catch (err) {
+      console.error('Failed to load recent transactions:', err.message);
+    }
+  };
+
+  const handleLoadTransactionById = async (idToUse = txIdToLoad) => {
+    if (!idToUse) {
+      showToast('warning', 'Input Required', 'Please enter a valid Transaction ID.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.get(`/api/transactions/${idToUse}`);
+      const tx = res.data.data;
+      if (tx) {
+        setFormData({
+          fromAccountId: tx.fromAccountId ? (tx.fromAccountId._id || tx.fromAccountId) : '',
+          toAccountId: tx.toAccountId ? (tx.toAccountId._id || tx.toAccountId) : '',
+          amount: tx.amount.toString(),
+          timestamp: new Date(tx.timestamp).toISOString().slice(0, 16),
+          balance: tx.fromAccountId?.balance ? tx.fromAccountId.balance.toString() : '',
+          lastActiveAt: tx.fromAccountId?.lastActiveAt ? new Date(tx.fromAccountId.lastActiveAt).toISOString().slice(0, 16) : '',
+          merchantName: tx.merchantName || 'Retail Merchant',
+          deviceId: tx.deviceId || 'DEV-SIM-7721',
+          location: tx.location || 'Mumbai, MH'
+        });
+        showToast('success', 'Context Loaded', `Populated simulator with Transaction #${idToUse.substring(idToUse.length - 6).toUpperCase()}`);
+      }
+    } catch (err) {
+      showToast('danger', 'Load Failed', err.response?.data?.message || 'Failed to retrieve transaction.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     // Default timestamp to now
     const nowLocal = new Date();
@@ -90,6 +133,7 @@ export const TransactionSimulator = () => {
     }));
 
     fetchAvailableAccounts();
+    fetchRecentTransactions();
   }, []);
 
   // Submit standard single transaction
@@ -109,7 +153,9 @@ export const TransactionSimulator = () => {
         merchantName: formData.merchantName,
         location: formData.location,
         deviceId: formData.deviceId,
-        timestamp: formData.timestamp ? new Date(formData.timestamp).toISOString() : new Date().toISOString()
+        timestamp: formData.timestamp ? new Date(formData.timestamp).toISOString() : new Date().toISOString(),
+        bypassEngine,
+        runParallel
       };
 
       if (formData.fromAccountId) payload.fromAccountId = formData.fromAccountId;
@@ -123,6 +169,7 @@ export const TransactionSimulator = () => {
       setResult(res.data.data);
       showToast('success', 'Transaction Ingested', `Risk Score: ${res.data.data.fraudScoreId?.totalScore || 0}%`);
       fetchAvailableAccounts();
+      fetchRecentTransactions();
     } catch (err) {
       showToast('danger', 'Ingestion Failed', err.response?.data?.message || 'Error processing transaction.');
     } finally {
@@ -307,6 +354,7 @@ export const TransactionSimulator = () => {
       }
 
       fetchAvailableAccounts();
+      fetchRecentTransactions();
     } catch (err) {
       showToast('danger', 'Simulation Run Failed', err.response?.data?.message || 'Error executing preset.');
     } finally {
@@ -440,6 +488,95 @@ export const TransactionSimulator = () => {
         )}
       </div>
 
+      {/* RECENT TRANSACTIONS LEDGER LIST */}
+      <div className="bg-surface border border-accent/5 rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex justify-between items-center border-b border-accent/5 pb-3">
+          <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider flex items-center space-x-1.5">
+            <span>Recent Ingested Transactions Ledger</span>
+          </h3>
+          <button
+            onClick={fetchRecentTransactions}
+            className="p-1 hover:bg-bg rounded transition-colors text-muted hover:text-text-primary animate-none"
+            type="button"
+            title="Refresh transactions"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-[11px]">
+            <thead>
+              <tr className="bg-bg/40 border-b border-accent/5 text-[9px] font-bold text-muted uppercase tracking-wider">
+                <th className="py-2.5 px-3">TX ID</th>
+                <th className="py-2.5 px-3">From</th>
+                <th className="py-2.5 px-3">To</th>
+                <th className="py-2.5 px-3">Amount</th>
+                <th className="py-2.5 px-3">Risk Score</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3">Merchant</th>
+                <th className="py-2.5 px-3">Time</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentTransactions.map((tx) => (
+                <tr key={tx._id} className="border-b border-accent/[0.02] hover:bg-bg/25 transition-colors">
+                  <td className="py-2.5 px-3 font-mono font-bold text-muted text-[10px]">
+                    {tx.transactionId || tx._id}
+                  </td>
+                  <td className="py-2.5 px-3 font-mono text-[10px]">
+                    {tx.fromAccount?.accountNumber || (tx.fromAccountId?.accountNumber || 'EXTERNAL')}
+                  </td>
+                  <td className="py-2.5 px-3 font-mono text-[10px]">
+                    {tx.toAccount?.accountNumber || (tx.toAccountId?.accountNumber || 'EXTERNAL')}
+                  </td>
+                  <td className="py-2.5 px-3 font-bold text-text-primary">
+                    {formatCurrency(tx.amount)}
+                  </td>
+                  <td className={`py-2.5 px-3 font-bold ${getRiskScoreColor(tx.fraudScoreId?.totalScore || 0)}`}>
+                    {tx.fraudScoreId?.totalScore !== undefined ? `${tx.fraudScoreId.totalScore}%` : 'N/A'}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
+                      tx.status === 'blocked' ? 'bg-danger-bg text-danger' : 
+                      tx.status === 'flagged' ? 'bg-warning-bg text-warning' : 
+                      'bg-success-bg text-success'
+                    }`}>
+                      {tx.status}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-muted">{tx.merchantName || 'N/A'}</td>
+                  <td className="py-2.5 px-3 text-muted text-[10px]">
+                    {new Date(tx.timestamp).toLocaleString()}
+                  </td>
+                  <td className="py-2.5 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetId = tx.transactionId || tx._id;
+                        setTxIdToLoad(targetId);
+                        handleLoadTransactionById(targetId);
+                      }}
+                      className="px-2 py-1 bg-accent/5 hover:bg-accent/10 border border-accent/10 rounded font-bold text-[9px]"
+                    >
+                      Load into Form
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {recentTransactions.length === 0 && (
+                <tr>
+                  <td colSpan="9" className="text-center py-6 text-muted">
+                    No transactions found in ledger. Click refresh or simulate a new ingestion.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* FORM PANEL */}
@@ -448,6 +585,27 @@ export const TransactionSimulator = () => {
             <Sparkles className="w-4 h-4 text-warning" />
             <span>Ingest Live Transaction</span>
           </h3>
+
+          {/* LOAD TRANSACTION BY ID */}
+          <div className="bg-bg/40 p-4 rounded-xl border border-accent/5 space-y-3">
+            <span className="font-bold text-[9px] text-muted uppercase tracking-wider block">Pre-populate from existing transaction</span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Enter Transaction ID (e.g. TX-123456)"
+                value={txIdToLoad}
+                onChange={(e) => setTxIdToLoad(e.target.value)}
+                className="flex-1 px-3 py-2 bg-bg text-text-primary text-xs border border-accent/10 rounded-lg focus:outline-none focus:border-accent font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => handleLoadTransactionById()}
+                className="px-4 py-2 bg-bg hover:bg-accent/5 text-text-primary text-xs font-bold rounded-lg border border-accent/10 transition-colors"
+              >
+                Load Context
+              </button>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -569,6 +727,33 @@ export const TransactionSimulator = () => {
               </div>
             </div>
 
+            {/* Simulation controls & flags */}
+            <div className="flex flex-col sm:flex-row gap-4 p-1">
+              <label className="flex items-center space-x-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={bypassEngine}
+                  onChange={(e) => setBypassEngine(e.target.checked)}
+                  className="rounded border-accent/15 text-accent focus:ring-accent w-4 h-4"
+                />
+                <span className="text-[10px] text-muted font-semibold uppercase tracking-wider">
+                  Bypass Heuristics (Direct Ledger Add)
+                </span>
+              </label>
+
+              <label className="flex items-center space-x-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={runParallel}
+                  onChange={(e) => setRunParallel(e.target.checked)}
+                  className="rounded border-accent/15 text-accent focus:ring-accent w-4 h-4"
+                />
+                <span className="text-[10px] text-muted font-semibold uppercase tracking-wider">
+                  Parallel Execution (Run detectors simultaneously)
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -654,7 +839,7 @@ export const TransactionSimulator = () => {
               <span>Ingestion Results</span>
             </h3>
             <span className="text-[10px] text-muted font-mono">
-              Tx ID: #{result._id.toUpperCase()}
+              Tx ID: {result.transactionId || result._id}
             </span>
           </div>
 
